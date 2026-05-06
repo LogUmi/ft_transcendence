@@ -1,0 +1,27 @@
+http://localhost, http://127.0.0.1 {
+	# redirection http -> https
+	redir "https://localhost:8443{uri}" permanent
+}
+
+https://localhost {
+	# reverse proxy vers le backend pour les routes API, websocket etc ...
+	handle /api/* {
+		reverse_proxy backend:8080
+	}
+	handle /health {
+		reverse_proxy backend:8080
+	}
+	handle /uploads/* {
+		reverse_proxy backend:8080
+	}
+	# WebSocket : /ws (chat) et /ws/* (blindtest, etc.)
+	handle /ws {
+		reverse_proxy backend:8080
+	}
+	# spa fallback pour react router
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

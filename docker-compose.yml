@@ -1,0 +1,107 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: transcendence_db
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    # PROD: supprimer le bloc port, le port ne doit pas etre exposed
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+     # PROD: ajouter restart: unless-stopped
+    healthcheck:
+      test: [
+            "CMD-SHELL",
+            "pg_isready -U ${DB_USER} -d ${DB_NAME}"
+            ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7
+    container_name: transcendence_redis
+    command: ["redis-server", "--save", ""]
+    # PROD: ajouter restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # ne pas mettre de ports
+
+  migrate:
+    image: migrate/migrate
+    container_name: transcendence_migrate
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/migrations:/migrations
+    command:
+      [
+      "-path=/migrations",
+      "-database=postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable",
+      "up"
+      ]
+    restart: "no"
+  backend:
+    build:
+      context: ./backend
+    container_name: transcendence_back
+    env_file:
+      - .env
+    volumes:
+      - avatars_data:/app/uploads/avatars
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      meilisearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: transcendence_front
+    # depends_on:
+    #   backend:
+    #     condition: service_completed_successfully
+    ports:
+      - "8080:80"
+      - "8443:443"
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    ports:
+      - "7700:7700"
+    env_file:
+      - .env
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:7700/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres_data:
+  meilisearch_data:
+  avatars_data:
